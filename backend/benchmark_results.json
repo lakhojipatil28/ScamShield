@@ -1,0 +1,15 @@
+{
+  "total": 12,
+  "true_positives": 8,
+  "true_negatives": 4,
+  "false_positives": 0,
+  "false_negatives": 0,
+  "accuracy": 1.0,
+  "precision": 1.0,
+  "recall": 1.0,
+  "f1": 1.0,
+  "avg_latency_ms": 14.71,
+  "p50_latency_ms": 13.59,
+  "p95_latency_ms": 28.18,
+  "avg_deterministic_ms": 0.96
+}
