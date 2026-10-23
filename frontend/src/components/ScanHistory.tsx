@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Clock,
   Search,
@@ -15,31 +15,38 @@ interface ScanHistoryProps {
   onGoToScanner: () => void;
 }
 
-export const ScanHistory = ({ onSelectScan, onGoToScanner }: ScanHistoryProps) => {
+export const ScanHistory: React.FC<ScanHistoryProps> = ({ onSelectScan, onGoToScanner }) => {
   const [scans, setScans] = useState<ScanResponse[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedRisk, setSelectedRisk] = useState<string>('ALL');
   const [selectedType, setSelectedType] = useState<string>('ALL');
   const [deletingId, setDeletingId] = useState<string | null>(null);
-
-  const fetchHistory = async () => {
-    setIsLoading(true);
-    try {
-      const riskParam = selectedRisk !== 'ALL' ? (selectedRisk as RiskLevel) : undefined;
-      const typeParam = selectedType !== 'ALL' ? (selectedType as ScanType) : undefined;
-      const data = await listScans(100, 0, riskParam, typeParam);
-      setScans(data);
-    } catch (e) {
-      console.error('Failed to fetch history:', e);
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
 
   useEffect(() => {
-    fetchHistory();
-  }, [selectedRisk, selectedType]);
+    let isCurrent = true;
+    const run = async () => {
+      try {
+        const riskParam = selectedRisk !== 'ALL' ? (selectedRisk as RiskLevel) : undefined;
+        const typeParam = selectedType !== 'ALL' ? (selectedType as ScanType) : undefined;
+        const data = await listScans(100, 0, riskParam, typeParam);
+        if (isCurrent) {
+          setScans(data);
+          setIsLoading(false);
+        }
+      } catch (err: unknown) {
+        if (isCurrent) {
+          console.error('Failed to fetch history:', err);
+          setIsLoading(false);
+        }
+      }
+    };
+    run();
+    return () => {
+      isCurrent = false;
+    };
+  }, [selectedRisk, selectedType, refreshTrigger]);
 
   const handleDelete = async (scanId: string) => {
     if (!window.confirm('Are you sure you want to permanently delete this scan record?')) {
@@ -49,7 +56,8 @@ export const ScanHistory = ({ onSelectScan, onGoToScanner }: ScanHistoryProps) =
     try {
       await deleteScan(scanId);
       setScans((prev) => prev.filter((s) => s.scan_id !== scanId));
-    } catch (e) {
+    } catch (err: unknown) {
+      console.error('Failed to delete scan record:', err);
       alert('Failed to delete scan record');
     } finally {
       setDeletingId(null);
@@ -79,9 +87,13 @@ export const ScanHistory = ({ onSelectScan, onGoToScanner }: ScanHistoryProps) =
           </p>
         </div>
         <button
-          onClick={fetchHistory}
+          onClick={() => {
+            setIsLoading(true);
+            setRefreshTrigger((prev) => prev + 1);
+          }}
           disabled={isLoading}
-          className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-800 bg-slate-900 text-xs font-medium text-slate-300 hover:bg-slate-800 transition-colors cursor-pointer"
+          aria-label="Refresh scan history"
+          className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-800 bg-slate-900 text-xs font-medium text-slate-300 hover:bg-slate-800 focus-visible:ring-2 focus-visible:ring-cyan-500 transition-colors cursor-pointer"
         >
           <RefreshCw className={`h-3.5 w-3.5 ${isLoading ? 'animate-spin' : ''}`} />
           <span>Refresh</span>
@@ -100,19 +112,25 @@ export const ScanHistory = ({ onSelectScan, onGoToScanner }: ScanHistoryProps) =
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             placeholder="Search keywords, threat, or ID..."
-            className="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-700 bg-slate-950/80 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-500"
+            aria-label="Search scan history"
+            className="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-700 bg-slate-950/80 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-500 focus-visible:ring-2 focus-visible:ring-cyan-500"
           />
         </div>
 
         {/* Filters */}
         <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
-          <div className="flex items-center gap-1.5 text-xs text-slate-400">
+          <label htmlFor="risk-filter" className="flex items-center gap-1.5 text-xs text-slate-400">
             <Filter className="h-3.5 w-3.5" />
             <span>Risk:</span>
-          </div>
+          </label>
           <select
+            id="risk-filter"
             value={selectedRisk}
-            onChange={(e) => setSelectedRisk(e.target.value)}
+            onChange={(e) => {
+              setIsLoading(true);
+              setSelectedRisk(e.target.value);
+            }}
+            aria-label="Filter by risk level"
             className="rounded-xl border border-slate-700 bg-slate-950/80 px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-cyan-500"
           >
             <option value="ALL">All Risk Levels</option>
@@ -122,12 +140,17 @@ export const ScanHistory = ({ onSelectScan, onGoToScanner }: ScanHistoryProps) =
             <option value="LOW">Low</option>
           </select>
 
-          <div className="flex items-center gap-1.5 text-xs text-slate-400 ml-2">
+          <label htmlFor="type-filter" className="flex items-center gap-1.5 text-xs text-slate-400 ml-2">
             <span>Type:</span>
-          </div>
+          </label>
           <select
+            id="type-filter"
             value={selectedType}
-            onChange={(e) => setSelectedType(e.target.value)}
+            onChange={(e) => {
+              setIsLoading(true);
+              setSelectedType(e.target.value);
+            }}
+            aria-label="Filter by scan type"
             className="rounded-xl border border-slate-700 bg-slate-950/80 px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-cyan-500"
           >
             <option value="ALL">All Scan Types</option>
@@ -151,15 +174,15 @@ export const ScanHistory = ({ onSelectScan, onGoToScanner }: ScanHistoryProps) =
           </p>
           <button
             onClick={onGoToScanner}
-            className="mt-2 px-4 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-xs font-semibold text-white transition-colors cursor-pointer"
+            className="mt-2 px-4 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-xs font-semibold text-white focus-visible:ring-2 focus-visible:ring-cyan-500 transition-colors cursor-pointer"
           >
             Start a New Scan
           </button>
         </div>
       ) : (
-        <div className="space-y-3">
+        <div className="space-y-3" role="feed" aria-label="Scan history list">
           {filteredScans.map((s) => (
-            <div
+            <article
               key={s.scan_id}
               className="p-4 rounded-2xl border border-slate-800 bg-slate-900/70 hover:bg-slate-800/60 transition-all flex flex-col md:flex-row items-start md:items-center justify-between gap-4"
             >
@@ -214,7 +237,8 @@ export const ScanHistory = ({ onSelectScan, onGoToScanner }: ScanHistoryProps) =
               <div className="flex items-center gap-2 self-end md:self-center">
                 <button
                   onClick={() => onSelectScan(s)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-cyan-800/80 bg-cyan-950/60 hover:bg-cyan-900/80 text-cyan-300 text-xs font-medium transition-colors cursor-pointer"
+                  aria-label={`View report for scan ${s.scan_id}`}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-cyan-800/80 bg-cyan-950/60 hover:bg-cyan-900/80 text-cyan-300 text-xs font-medium focus-visible:ring-2 focus-visible:ring-cyan-500 transition-colors cursor-pointer"
                 >
                   <ExternalLink className="h-3.5 w-3.5" />
                   <span>View Report</span>
@@ -222,13 +246,14 @@ export const ScanHistory = ({ onSelectScan, onGoToScanner }: ScanHistoryProps) =
                 <button
                   onClick={() => handleDelete(s.scan_id)}
                   disabled={deletingId === s.scan_id}
-                  className="p-2 rounded-xl border border-slate-800 bg-slate-950 text-slate-500 hover:text-red-400 hover:border-red-900/60 transition-colors cursor-pointer"
+                  aria-label={`Delete record ${s.scan_id}`}
+                  className="p-2 rounded-xl border border-slate-800 bg-slate-950 text-slate-500 hover:text-red-400 hover:border-red-900/60 focus-visible:ring-2 focus-visible:ring-red-500 transition-colors cursor-pointer"
                   title="Delete record"
                 >
                   <Trash2 className="h-3.5 w-3.5" />
                 </button>
               </div>
-            </div>
+            </article>
           ))}
         </div>
       )}

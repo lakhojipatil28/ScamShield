@@ -2,9 +2,9 @@
 Operational Telemetry and Performance Metrics Service for ScamShield.
 Tracks scan latencies (p50, p95), success/error rates, threat distributions, and token usage.
 """
-import time
-from typing import Dict, Any, List
+
 import statistics
+from typing import Any
 
 
 class MetricsService:
@@ -13,22 +13,22 @@ class MetricsService:
         self.successful_scans: int = 0
         self.failed_scans: int = 0
         self.total_tokens_used: int = 0
-        self.scan_types_count: Dict[str, int] = {
+        self.scan_types_count: dict[str, int] = {
             "text": 0,
             "email": 0,
             "url": 0,
             "screenshot": 0,
         }
-        self.risk_levels_count: Dict[str, int] = {
+        self.risk_levels_count: dict[str, int] = {
             "LOW": 0,
             "MODERATE": 0,
             "HIGH": 0,
             "CRITICAL": 0,
         }
-        self.threat_types_count: Dict[str, int] = {}
-        self.latencies_ms: List[float] = []
-        self.det_latencies_ms: List[float] = []
-        self.ai_latencies_ms: List[float] = []
+        self.threat_types_count: dict[str, int] = {}
+        self.latencies_ms: list[float] = []
+        self.det_latencies_ms: list[float] = []
+        self.ai_latencies_ms: list[float] = []
 
     def record_scan(
         self,
@@ -49,8 +49,12 @@ class MetricsService:
             self.failed_scans += 1
 
         self.scan_types_count[scan_type] = self.scan_types_count.get(scan_type, 0) + 1
-        self.risk_levels_count[risk_level] = self.risk_levels_count.get(risk_level, 0) + 1
-        self.threat_types_count[threat_type] = self.threat_types_count.get(threat_type, 0) + 1
+        self.risk_levels_count[risk_level] = (
+            self.risk_levels_count.get(risk_level, 0) + 1
+        )
+        self.threat_types_count[threat_type] = (
+            self.threat_types_count.get(threat_type, 0) + 1
+        )
 
         if tokens_used:
             self.total_tokens_used += tokens_used
@@ -67,7 +71,7 @@ class MetricsService:
         if len(self.ai_latencies_ms) > 1000:
             self.ai_latencies_ms.pop(0)
 
-    def get_summary(self) -> Dict[str, Any]:
+    def get_summary(self) -> dict[str, Any]:
         """Generate aggregated operational metrics for the dashboard."""
         avg_latency = statistics.mean(self.latencies_ms) if self.latencies_ms else 0.0
         p50_latency = statistics.median(self.latencies_ms) if self.latencies_ms else 0.0
@@ -77,11 +81,17 @@ class MetricsService:
             else (max(self.latencies_ms) if self.latencies_ms else 0.0)
         )
 
-        avg_det_ms = statistics.mean(self.det_latencies_ms) if self.det_latencies_ms else 0.0
-        avg_ai_ms = statistics.mean(self.ai_latencies_ms) if self.ai_latencies_ms else 0.0
+        avg_det_ms = (
+            statistics.mean(self.det_latencies_ms) if self.det_latencies_ms else 0.0
+        )
+        avg_ai_ms = (
+            statistics.mean(self.ai_latencies_ms) if self.ai_latencies_ms else 0.0
+        )
 
         success_rate = (
-            (self.successful_scans / self.total_scans * 100) if self.total_scans > 0 else 100.0
+            (self.successful_scans / self.total_scans * 100)
+            if self.total_scans > 0
+            else 100.0
         )
 
         return {

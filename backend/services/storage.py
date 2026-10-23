@@ -3,28 +3,29 @@ Pluggable Storage Service for ScamShield.
 Supports Cloud Firestore (when configured) or local SQLite with user isolation.
 Minimizes sensitive retained data and enables full auditability.
 """
-import sqlite3
 import json
 import logging
-from typing import List, Optional, Dict, Any
-from datetime import datetime, timezone
-import os
+import sqlite3
+from typing import Any
 
 from backend.config import settings
-from backend.schemas.scan_schemas import ScanResponse, RiskLevel, ScanType
+from backend.schemas.scan_schemas import ScanResponse
 
 logger = logging.getLogger("scamshield.storage")
 
 
 class StorageService:
-    def __init__(self):
+    def __init__(self) -> None:
         self.db_path = settings.SQLITE_DB_PATH
         self._init_sqlite()
 
-    def _init_sqlite(self):
+    def _init_sqlite(self) -> None:
         """Initialize SQLite tables and indices for local development and offline mode."""
         try:
             with sqlite3.connect(self.db_path) as conn:
+                conn.execute("PRAGMA journal_mode=WAL;")
+                conn.execute("PRAGMA synchronous=NORMAL;")
+                conn.execute("PRAGMA busy_timeout=5000;")
                 cursor = conn.cursor()
                 cursor.execute("""
                     CREATE TABLE IF NOT EXISTS scan_records (
@@ -41,14 +42,22 @@ class StorageService:
                         created_at TEXT NOT NULL
                     )
                 """)
-                cursor.execute("CREATE INDEX IF NOT EXISTS idx_user_id ON scan_records (user_id)")
-                cursor.execute("CREATE INDEX IF NOT EXISTS idx_created_at ON scan_records (created_at DESC)")
-                cursor.execute("CREATE INDEX IF NOT EXISTS idx_risk_level ON scan_records (risk_level)")
+                cursor.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_user_id ON scan_records (user_id)"
+                )
+                cursor.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_created_at ON scan_records (created_at DESC)"
+                )
+                cursor.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_risk_level ON scan_records (risk_level)"
+                )
                 conn.commit()
-        except Exception as e:
+        except sqlite3.Error as e:
             logger.error(f"Error initializing SQLite database: {e}")
 
-    def save_scan(self, scan_data: ScanResponse, user_id: Optional[str] = "guest") -> bool:
+    def save_scan(
+        self, scan_data: ScanResponse, user_id: str | None = "guest"
+    ) -> bool:
         """Save completed scan response with user isolation."""
         try:
             with sqlite3.connect(self.db_path) as conn:
@@ -77,18 +86,18 @@ class StorageService:
                 )
                 conn.commit()
             return True
-        except Exception as e:
+        except (sqlite3.Error, OSError) as e:
             logger.error(f"Failed to persist scan record: {e}")
             return False
 
     def get_scans(
         self,
-        user_id: Optional[str] = "guest",
+        user_id: str | None = "guest",
         limit: int = 50,
         offset: int = 0,
-        risk_level: Optional[str] = None,
-        scan_type: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
+        risk_level: str | None = None,
+        scan_type: str | None = None,
+    ) -> list[dict[str, Any]]:
         """Retrieve paginated scan records for the specified user with optional filters."""
         try:
             with sqlite3.connect(self.db_path) as conn:
@@ -96,7 +105,7 @@ class StorageService:
                 cursor = conn.cursor()
 
                 query = "SELECT * FROM scan_records WHERE (user_id = ? OR user_id = 'guest')"
-                params: List[Any] = [user_id or "guest"]
+                params: list[Any] = [user_id or "guest"]
 
                 if risk_level:
                     query += " AND risk_level = ?"
@@ -116,15 +125,17 @@ class StorageService:
                     try:
                         record_dict = json.loads(row["response_json"])
                         results.append(record_dict)
-                    except Exception:
+                    except json.JSONDecodeError:
                         results.append(dict(row))
 
                 return results
-        except Exception as e:
+        except (sqlite3.Error, OSError) as e:
             logger.error(f"Failed to query scan records: {e}")
             return []
 
-    def get_scan_by_id(self, scan_id: str, user_id: Optional[str] = "guest") -> Optional[Dict[str, Any]]:
+    def get_scan_by_id(
+        self, scan_id: str, user_id: str | None = "guest"
+    ) -> dict[str, Any] | None:
         """Retrieve single scan record verifying user ownership."""
         try:
             with sqlite3.connect(self.db_path) as conn:
@@ -138,11 +149,11 @@ class StorageService:
                 if row:
                     return json.loads(row["response_json"])
                 return None
-        except Exception as e:
+        except (sqlite3.Error, json.JSONDecodeError, OSError) as e:
             logger.error(f"Failed to fetch scan by ID: {e}")
             return None
 
-    def delete_scan(self, scan_id: str, user_id: Optional[str] = "guest") -> bool:
+    def delete_scan(self, scan_id: str, user_id: str | None = "guest") -> bool:
         """Delete user's scan record."""
         try:
             with sqlite3.connect(self.db_path) as conn:
@@ -153,7 +164,7 @@ class StorageService:
                 )
                 conn.commit()
                 return cursor.rowcount > 0
-        except Exception as e:
+        except (sqlite3.Error, OSError) as e:
             logger.error(f"Failed to delete scan: {e}")
             return False
 

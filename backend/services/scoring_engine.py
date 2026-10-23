@@ -3,17 +3,19 @@ Transparent Risk Scoring Engine for ScamShield.
 Reconciles deterministic rule matches, external check statuses, and Gemini AI contextual interpretation
 into an evidence-grounded risk score and risk level.
 """
-from typing import Dict, Any, List, Optional
+
+from typing import Any
+
 from backend.config import settings
 from backend.schemas.scan_schemas import (
-    RiskLevel,
-    ThreatType,
-    RiskAssessment,
-    IndicatorItem,
     EvidenceItem,
-    RecommendationItem,
     EvidenceType,
     GeminiScamAnalysis,
+    IndicatorItem,
+    RecommendationItem,
+    RiskAssessment,
+    RiskLevel,
+    ThreatType,
 )
 
 
@@ -41,26 +43,30 @@ class ScoringEngine:
 
     def reconcile(
         self,
-        deterministic_result: Dict[str, Any],
-        gemini_result: Dict[str, Any],
+        deterministic_result: dict[str, Any],
+        gemini_result: dict[str, Any],
         injection_detected: bool = False,
         scan_type: str = "text",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Synthesize multi-modal findings into an auditable final assessment.
         """
         det_score = deterministic_result.get("deterministic_score", 0)
         det_threat = deterministic_result.get("primary_threat", ThreatType.UNKNOWN)
-        det_indicators: List[IndicatorItem] = list(deterministic_result.get("indicators", []))
-        det_evidence: List[EvidenceItem] = list(deterministic_result.get("evidence", []))
+        det_indicators: list[IndicatorItem] = list(
+            deterministic_result.get("indicators", [])
+        )
+        det_evidence: list[EvidenceItem] = list(
+            deterministic_result.get("evidence", [])
+        )
 
-        uncertainty_notes: List[str] = []
+        uncertainty_notes: list[str] = []
         is_partial = False
         reconciled_score: int = 0
         final_threat: ThreatType = det_threat
         confidence: float = 0.85
         summary: str = ""
-        recommendations: List[RecommendationItem] = []
+        recommendations: list[RecommendationItem] = []
 
         # 1. Prompt Injection Handling
         if injection_detected:
@@ -86,7 +92,7 @@ class ScoringEngine:
 
         # 2. Check Gemini Availability
         ai_available = gemini_result.get("available", False)
-        ai_analysis: Optional[GeminiScamAnalysis] = gemini_result.get("analysis")
+        ai_analysis: GeminiScamAnalysis | None = gemini_result.get("analysis")
 
         if not ai_available or not ai_analysis:
             # Deterministic Only Mode
@@ -107,12 +113,14 @@ class ScoringEngine:
             elif reconciled_score >= 60:
                 summary = f"HIGH RISK: Suspicious patterns detected consistent with {final_threat.value}. Caution advised."
             elif reconciled_score >= 30:
-                summary = f"MODERATE RISK: Some anomalous or persuasive patterns identified; verify sender through independent channels."
+                summary = "MODERATE RISK: Some anomalous or persuasive patterns identified; verify sender through independent channels."
             else:
                 summary = "LOW RISK: No blatant deterministic fraud indicators detected. Note that sophisticated novel scams may still evade basic static rules."
 
             # Generate default rule-based recommendations
-            recommendations = self._generate_default_recommendations(final_threat, reconciled_score, scan_type)
+            recommendations = self._generate_default_recommendations(
+                final_threat, reconciled_score, scan_type
+            )
 
         else:
             # AI + Deterministic Corroboration Mode
@@ -127,7 +135,9 @@ class ScoringEngine:
             if has_critical_det:
                 # Deterministic critical evidence cannot be softened by AI
                 reconciled_score = max(det_score, ai_score, 85)
-                final_threat = det_threat if det_threat != ThreatType.UNKNOWN else ai_threat
+                final_threat = (
+                    det_threat if det_threat != ThreatType.UNKNOWN else ai_threat
+                )
             elif det_score > 0 and ai_score > 0:
                 # Corroborated risk: 50% deterministic, 50% AI contextual + corroboration boost
                 base_score = int(0.45 * det_score + 0.55 * ai_score)
@@ -135,7 +145,9 @@ class ScoringEngine:
                 if det_score >= 50 and ai_score >= 50:
                     base_score = min(100, base_score + 5)
                 reconciled_score = min(100, base_score)
-                final_threat = ai_threat if ai_threat != ThreatType.UNKNOWN else det_threat
+                final_threat = (
+                    ai_threat if ai_threat != ThreatType.UNKNOWN else det_threat
+                )
             elif det_score > 0:
                 reconciled_score = det_score
                 final_threat = det_threat
@@ -154,7 +166,9 @@ class ScoringEngine:
                         description=ws,
                         severity="HIGH" if reconciled_score >= 60 else "MEDIUM",
                         evidence_type=EvidenceType.AI_INTERPRETATION,
-                        supporting_quote=ai_analysis.evidence_quotes[0] if ai_analysis.evidence_quotes else None,
+                        supporting_quote=ai_analysis.evidence_quotes[0]
+                        if ai_analysis.evidence_quotes
+                        else None,
                     )
                 )
 
@@ -186,7 +200,9 @@ class ScoringEngine:
 
         # Ensure uncertainty notes mention no external reputation if not queried
         if "reputation" not in " ".join(uncertainty_notes).lower():
-            uncertainty_notes.append("External domain reputation and threat databases could not be verified.")
+            uncertainty_notes.append(
+                "External domain reputation and threat databases could not be verified."
+            )
 
         risk_level = self.calculate_risk_band(reconciled_score)
 
@@ -209,7 +225,7 @@ class ScoringEngine:
 
     def _generate_default_recommendations(
         self, threat_type: ThreatType, score: int, scan_type: str
-    ) -> List[RecommendationItem]:
+    ) -> list[RecommendationItem]:
         """Produce safe prescriptive recommendations when in deterministic mode."""
         recs = []
         if score >= 60:

@@ -1,13 +1,13 @@
 """Unit tests for Risk Scoring Engine."""
-import pytest
-from backend.services.scoring_engine import scoring_engine
+
 from backend.schemas.scan_schemas import (
-    RiskLevel,
-    ThreatType,
-    IndicatorItem,
     EvidenceType,
     GeminiScamAnalysis,
+    IndicatorItem,
+    RiskLevel,
+    ThreatType,
 )
+from backend.services.scoring_engine import scoring_engine
 
 
 def test_scoring_bands():

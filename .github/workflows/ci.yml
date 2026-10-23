@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  backend-quality-and-tests:
+    name: Backend Quality & Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install ruff pytest pytest-asyncio httpx fastapi uvicorn pydantic pydantic-settings google-genai pillow python-multipart
+
+      - name: Run Ruff Code Quality Linter
+        run: python -m ruff check backend/
+
+      - name: Run Pytest Test Suite
+        run: python -m pytest backend/tests -v
+
+      - name: Run Synthetic Benchmark
+        run: python -m backend.benchmark
+
+  frontend-build:
+    name: Frontend Lint & Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Frontend Dependencies
+        working-directory: ./frontend
+        run: npm ci
+
+      - name: Run Oxlint
+        working-directory: ./frontend
+        run: npm run lint
+
+      - name: Build Production Assets
+        working-directory: ./frontend
+        run: npm run build

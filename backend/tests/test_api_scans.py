@@ -1,6 +1,7 @@
 """Integration and API Endpoint tests for ScamShield."""
+
 import io
-import pytest
+
 from fastapi.testclient import TestClient
 from PIL import Image
 
@@ -67,7 +68,9 @@ def test_scan_email_job_scam():
 
 
 def test_scan_url_ssrf():
-    res = client.post("/api/v1/scan/url", json={"url": "http://169.254.169.254/meta-data"})
+    res = client.post(
+        "/api/v1/scan/url", json={"url": "http://169.254.169.254/meta-data"}
+    )
     assert res.status_code == 200
     data = res.json()
     assert data["assessment"]["risk_level"] == "CRITICAL"
@@ -95,7 +98,10 @@ def test_scan_screenshot_invalid_file():
     files = {"file": ("fake.png", bad_bytes, "image/png")}
     res = client.post("/api/v1/scan/screenshot", files=files)
     assert res.status_code == 400
-    assert any(term in res.json()["detail"].lower() for term in ["corrupted", "invalid", "too small"])
+    assert any(
+        term in res.json()["detail"].lower()
+        for term in ["corrupted", "invalid", "too small"]
+    )
 
 
 def test_scan_history_and_deletion():
@@ -108,23 +114,31 @@ def test_scan_history_and_deletion():
     scan_id = text_res.json()["scan_id"]
 
     # Retrieve history
-    list_res = client.get("/api/v1/scans", headers={"Authorization": "Bearer test_token_xyz"})
+    list_res = client.get(
+        "/api/v1/scans", headers={"Authorization": "Bearer test_token_xyz"}
+    )
     assert list_res.status_code == 200
     scans = list_res.json()
     assert any(s["scan_id"] == scan_id for s in scans)
 
     # Get single scan
-    detail_res = client.get(f"/api/v1/scans/{scan_id}", headers={"Authorization": "Bearer test_token_xyz"})
+    detail_res = client.get(
+        f"/api/v1/scans/{scan_id}", headers={"Authorization": "Bearer test_token_xyz"}
+    )
     assert detail_res.status_code == 200
     assert detail_res.json()["scan_id"] == scan_id
 
     # Delete scan
-    del_res = client.delete(f"/api/v1/scans/{scan_id}", headers={"Authorization": "Bearer test_token_xyz"})
+    del_res = client.delete(
+        f"/api/v1/scans/{scan_id}", headers={"Authorization": "Bearer test_token_xyz"}
+    )
     assert del_res.status_code == 200
     assert del_res.json()["status"] == "success"
 
     # Verify 404 after deletion
-    del_verify = client.get(f"/api/v1/scans/{scan_id}", headers={"Authorization": "Bearer test_token_xyz"})
+    del_verify = client.get(
+        f"/api/v1/scans/{scan_id}", headers={"Authorization": "Bearer test_token_xyz"}
+    )
     assert del_verify.status_code == 404
 
 
@@ -178,4 +192,3 @@ def test_scan_malformed_url_safe_handling():
     data = res.json()
     assert "assessment" in data
     assert data["assessment"]["risk_level"] in ["MODERATE", "HIGH", "CRITICAL"]
-

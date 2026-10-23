@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Activity,
   ShieldAlert,
@@ -35,27 +35,34 @@ const RISK_COLORS = {
   CRITICAL: '#ef4444', // Red
 };
 
-export const Dashboard = ({ onSelectScan, onGoToScanner }: DashboardProps) => {
+export const Dashboard: React.FC<DashboardProps> = ({ onSelectScan, onGoToScanner }) => {
   const [metrics, setMetrics] = useState<MetricsSummary | null>(null);
   const [recentScans, setRecentScans] = useState<ScanResponse[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-
-  const loadData = async () => {
-    setIsLoading(true);
-    try {
-      const [m, scans] = await Promise.all([getMetrics(), listScans(10)]);
-      setMetrics(m);
-      setRecentScans(scans);
-    } catch (e) {
-      console.error('Failed to load dashboard data:', e);
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  const [refreshCount, setRefreshCount] = useState(0);
 
   useEffect(() => {
-    loadData();
-  }, []);
+    let isCurrent = true;
+    const run = async () => {
+      try {
+        const [m, scans] = await Promise.all([getMetrics(), listScans(10)]);
+        if (isCurrent) {
+          setMetrics(m);
+          setRecentScans(scans);
+          setIsLoading(false);
+        }
+      } catch (err: unknown) {
+        if (isCurrent) {
+          console.error('Failed to load dashboard data:', err);
+          setIsLoading(false);
+        }
+      }
+    };
+    run();
+    return () => {
+      isCurrent = false;
+    };
+  }, [refreshCount]);
 
   const riskPieData = metrics
     ? Object.entries(metrics.risk_distribution).map(([name, value]) => ({
@@ -76,7 +83,7 @@ export const Dashboard = ({ onSelectScan, onGoToScanner }: DashboardProps) => {
     : 0;
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-8 space-y-8">
+    <div className="max-w-7xl mx-auto px-4 py-8 space-y-8" role="region" aria-label="Security Telemetry Dashboard">
       {/* Top Header */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
@@ -87,16 +94,21 @@ export const Dashboard = ({ onSelectScan, onGoToScanner }: DashboardProps) => {
         </div>
         <div className="flex items-center gap-2">
           <button
-            onClick={loadData}
+            onClick={() => {
+              setIsLoading(true);
+              setRefreshCount((prev) => prev + 1);
+            }}
             disabled={isLoading}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-800 bg-slate-900 text-xs font-medium text-slate-300 hover:bg-slate-800 transition-colors cursor-pointer"
+            aria-label="Refresh telemetry data"
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-800 bg-slate-900 text-xs font-medium text-slate-300 hover:bg-slate-800 focus-visible:ring-2 focus-visible:ring-cyan-500 transition-colors cursor-pointer"
           >
             <RefreshCw className={`h-3.5 w-3.5 ${isLoading ? 'animate-spin' : ''}`} />
             <span>Refresh</span>
           </button>
           <button
             onClick={onGoToScanner}
-            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-xs font-semibold text-white shadow-sm transition-colors cursor-pointer"
+            aria-label="Start a new security scan"
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-xs font-semibold text-white shadow-sm focus-visible:ring-2 focus-visible:ring-cyan-400 transition-colors cursor-pointer"
           >
             <span>New Scan</span>
             <ArrowRight className="h-3.5 w-3.5" />
@@ -105,13 +117,13 @@ export const Dashboard = ({ onSelectScan, onGoToScanner }: DashboardProps) => {
       </div>
 
       {/* KPI Metric Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4" role="group" aria-label="Key Performance Indicators">
         <div className="p-5 rounded-2xl border border-slate-800 bg-slate-900/70 space-y-2">
           <div className="flex items-center justify-between text-slate-400">
             <span className="text-xs font-semibold uppercase tracking-wider">Total Scans Conducted</span>
             <Activity className="h-4 w-4 text-cyan-400" />
           </div>
-          <p className="text-3xl font-extrabold text-white">{metrics?.total_scans ?? 0}</p>
+          <p className="text-3xl font-extrabold text-white" aria-live="polite">{metrics?.total_scans ?? 0}</p>
           <p className="text-xs text-slate-500">Across SMS, Email, URL & OCR</p>
         </div>
 
@@ -120,7 +132,7 @@ export const Dashboard = ({ onSelectScan, onGoToScanner }: DashboardProps) => {
             <span className="text-xs font-semibold uppercase tracking-wider">High & Critical Threats</span>
             <ShieldAlert className="h-4 w-4 text-red-400" />
           </div>
-          <p className="text-3xl font-extrabold text-red-400">{highRiskTotal}</p>
+          <p className="text-3xl font-extrabold text-red-400" aria-live="polite">{highRiskTotal}</p>
           <p className="text-xs text-slate-500">
             {metrics?.total_scans
               ? `${Math.round((highRiskTotal / metrics.total_scans) * 100)}% of submitted scans`
@@ -176,7 +188,7 @@ export const Dashboard = ({ onSelectScan, onGoToScanner }: DashboardProps) => {
               </button>
             </div>
           ) : (
-            <div className="h-64 flex items-center justify-center">
+            <div className="h-64 flex items-center justify-center" aria-label="Risk distribution donut chart">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
                   <Pie
@@ -239,7 +251,7 @@ export const Dashboard = ({ onSelectScan, onGoToScanner }: DashboardProps) => {
               <p>No threat categories detected yet.</p>
             </div>
           ) : (
-            <div className="h-64">
+            <div className="h-64" aria-label="Threat categories bar chart">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={threatBarData} margin={{ top: 10, right: 10, left: -20, bottom: 20 }}>
                   <XAxis dataKey="name" stroke="#64748b" fontSize={11} angle={-25} textAnchor="end" />
@@ -273,16 +285,16 @@ export const Dashboard = ({ onSelectScan, onGoToScanner }: DashboardProps) => {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
+            <table className="w-full text-left text-xs" aria-label="Recent scans table">
               <thead className="bg-slate-950/70 text-slate-400 uppercase tracking-wider border-b border-slate-800">
                 <tr>
-                  <th className="p-3">Risk Level</th>
-                  <th className="p-3">Score</th>
-                  <th className="p-3">Type</th>
-                  <th className="p-3">Threat Category</th>
-                  <th className="p-3">Inspected Snippet</th>
-                  <th className="p-3">Date</th>
-                  <th className="p-3 text-right">Action</th>
+                  <th scope="col" className="p-3">Risk Level</th>
+                  <th scope="col" className="p-3">Score</th>
+                  <th scope="col" className="p-3">Type</th>
+                  <th scope="col" className="p-3">Threat Category</th>
+                  <th scope="col" className="p-3">Inspected Snippet</th>
+                  <th scope="col" className="p-3">Date</th>
+                  <th scope="col" className="p-3 text-right">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/80">
@@ -319,7 +331,8 @@ export const Dashboard = ({ onSelectScan, onGoToScanner }: DashboardProps) => {
                     <td className="p-3 text-right">
                       <button
                         onClick={() => onSelectScan(s)}
-                        className="text-cyan-400 hover:text-cyan-300 font-medium cursor-pointer"
+                        aria-label={`Open report for ${s.scan_id}`}
+                        className="text-cyan-400 hover:text-cyan-300 font-medium focus-visible:ring-2 focus-visible:ring-cyan-500 cursor-pointer"
                       >
                         Open Report
                       </button>

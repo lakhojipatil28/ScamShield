@@ -1,23 +1,25 @@
 """
 Deterministic Rule Engine for Message, Email, and Threat Analysis.
-Combines high-precision regex matching, brand impersonation detection, credential theft traps,
-financial extortion flags, and benign intent mitigation.
+Combines high-precision pre-compiled regex matching, brand impersonation detection,
+credential theft traps, financial extortion flags, and benign intent mitigation.
 """
 import re
-from typing import Dict, Any, List, Optional
+from typing import Any
+
 from backend.schemas.scan_schemas import (
-    IndicatorItem,
     EvidenceItem,
     EvidenceType,
+    IndicatorItem,
     ThreatType,
-    RiskLevel,
 )
 
 
 class DeterministicDetector:
-    def __init__(self):
+    """Pre-compiled regex security analysis engine for rapid static scanning."""
+
+    def __init__(self) -> None:
         # 1. Credential & Verification Phishing Rules
-        self.credential_rules = [
+        self.credential_rules: list[dict[str, Any]] = [
             {
                 "id": "OTP_SOLICITATION",
                 "pattern": r"(?i)\b(?:send|share|reply\s+with|reply|text\s+back|provide|enter|submit)\s+(?:me\s+|us\s+)?(?:your\s+|the\s+)?(?:[\d\w\-]+\s+)?(?:otp|one-time\s+code|verification\s+code|security\s+code|code|pin)\b",
@@ -39,7 +41,7 @@ class DeterministicDetector:
         ]
 
         # 2. Impersonation of High-Risk Institutions
-        self.impersonation_rules = [
+        self.impersonation_rules: list[dict[str, Any]] = [
             {
                 "id": "GOV_TAX_IMPERSONATION",
                 "pattern": r"(?i)\b(?:irs|internal\s+revenue|hmrc|social\s+security\s+administration|fbi|police\s+department|customs\s+and\s+border)\b",
@@ -79,7 +81,7 @@ class DeterministicDetector:
         ]
 
         # 3. Urgency and Coercion Patterns
-        self.urgency_rules = [
+        self.urgency_rules: list[dict[str, Any]] = [
             {
                 "id": "EXTREME_URGENCY",
                 "pattern": r"(?i)\b(?:within\s+(?:24|12|48|15)\s+(?:hours|minutes)|immediate\s+action\s+required|urgent|urgent\s+notice|final\s+warning|account\s+(?:suspended|terminated|frozen|locked|restricted)\s+immediately|account\s+(?:has\s+been\s+)?locked)\b",
@@ -101,7 +103,7 @@ class DeterministicDetector:
         ]
 
         # 4. Advance Fee & Fake Job Scams
-        self.advance_fee_rules = [
+        self.advance_fee_rules: list[dict[str, Any]] = [
             {
                 "id": "JOB_REGISTRATION_FEE",
                 "pattern": r"(?i)\b(?:pay\s+(?:the\s+|a\s+)?(?:\$\d+\s+)?(?:refundable\s+)?(?:registration|processing|training|interview|background\s+check|equipment|deposit)(?:\s+fee|\s+deposit)?|refundable\s+deposit\s+for\s+laptop)\b",
@@ -132,7 +134,7 @@ class DeterministicDetector:
         ]
 
         # 5. Untraceable Payment Demands
-        self.payment_rules = [
+        self.payment_rules: list[dict[str, Any]] = [
             {
                 "id": "GIFT_CARD_CRYPTO_PAYMENT",
                 "pattern": r"(?i)\b(?:apple\s+gift\s+card|gift\s+card|steam\s+wallet|google\s+play\s+card|bitcoin\s+atm|crypto\s+transfer|usdt\s+deposit|western\s+union|moneygram)\b",
@@ -145,7 +147,7 @@ class DeterministicDetector:
         ]
 
         # 6. Off-Platform Channel Redirection
-        self.offplatform_rules = [
+        self.offplatform_rules: list[dict[str, Any]] = [
             {
                 "id": "OFF_PLATFORM_REDIRECTION",
                 "pattern": r"(?i)\b(?:contact\s+(?:me|our\s+hiring\s+manager)\s+on\s+whatsapp|add\s+(?:me\s+on\s+)?telegram|message\s+me\s+on\s+signal|wa\.me/\d+|t\.me/[a-zA-Z0-9_]+|contact\s+on\s+telegram)\b",
@@ -166,8 +168,8 @@ class DeterministicDetector:
             },
         ]
 
-        # 7. Benign Mitigating Patterns (Positive Indicators of legitimate security notices)
-        self.benign_mitigation_rules = [
+        # 7. Benign Mitigating Patterns
+        self.benign_mitigation_rules: list[dict[str, Any]] = [
             {
                 "id": "LEGIT_2FA_WARNING",
                 "pattern": r"(?i)\b(?:never\s+share\s+this\s+code|we\s+will\s+never\s+call\s+you\s+to\s+ask|do\s+not\s+share\s+with\s+anyone|if\s+you\s+did\s+not\s+request\s+this,\s+ignore)\b",
@@ -184,32 +186,43 @@ class DeterministicDetector:
             },
         ]
 
-    def analyze_text(self, text: str, context: Optional[str] = None) -> Dict[str, Any]:
-        """
-        Execute deterministic security checks on text.
-        Extracts matched indicators, quotes, calculates preliminary risk score,
-        and provides transparent evidence.
-        """
-        all_rules = (
+        # Precompile all threat rule regular expressions for peak performance
+        self.all_compiled_rules: list[dict[str, Any]] = []
+        for rule in (
             self.credential_rules
             + self.impersonation_rules
             + self.urgency_rules
             + self.advance_fee_rules
             + self.payment_rules
             + self.offplatform_rules
-        )
+        ):
+            r_copy = dict(rule)
+            r_copy["compiled"] = re.compile(rule["pattern"])
+            self.all_compiled_rules.append(r_copy)
 
-        indicators: List[IndicatorItem] = []
-        evidence: List[EvidenceItem] = []
-        threat_type_counts: Dict[ThreatType, int] = {}
+        self.compiled_mitigation_rules: list[dict[str, Any]] = []
+        for mit in self.benign_mitigation_rules:
+            m_copy = dict(mit)
+            m_copy["compiled"] = re.compile(mit["pattern"])
+            self.compiled_mitigation_rules.append(m_copy)
+
+    def analyze_text(self, text: str, context: str | None = None) -> dict[str, Any]:
+        """
+        Execute deterministic security checks on text using pre-compiled regular expressions.
+        Extracts matched indicators, quotes, calculates preliminary risk score,
+        and provides transparent evidence.
+        """
+        indicators: list[IndicatorItem] = []
+        evidence: list[EvidenceItem] = []
+        threat_type_counts: dict[ThreatType, int] = {}
         total_weight = 0
-        quotes: List[str] = []
+        quotes: list[str] = []
 
         full_content = f"{text}\n{context or ''}"
 
-        # 1. Match threat rules
-        for rule in all_rules:
-            match = re.search(rule["pattern"], full_content)
+        # 1. Match threat rules via pre-compiled regex
+        for rule in self.all_compiled_rules:
+            match = rule["compiled"].search(full_content)
             if match:
                 snippet = match.group(0).strip()
                 quotes.append(snippet)
@@ -239,8 +252,8 @@ class DeterministicDetector:
 
         # 2. Check for benign mitigating patterns
         benign_applied = False
-        for mit in self.benign_mitigation_rules:
-            match = re.search(mit["pattern"], full_content)
+        for mit in self.compiled_mitigation_rules:
+            match = mit["compiled"].search(full_content)
             if match:
                 snippet = match.group(0).strip()
                 total_weight += mit["mitigation_weight"]
@@ -254,13 +267,25 @@ class DeterministicDetector:
                     )
                 )
 
-        has_otp_solicitation = any(ind.name == "OTP / Verification Code Solicitation" for ind in indicators)
-        has_gift_card_or_crypto = any(ind.name == "Irreversible / Untraceable Payment Demand" for ind in indicators)
-        has_extortion = any(ind.name == "Extortion / Arrest Threat" for ind in indicators)
+        has_otp_solicitation = any(
+            ind.name == "OTP / Verification Code Solicitation" for ind in indicators
+        )
+        has_gift_card_or_crypto = any(
+            ind.name == "Irreversible / Untraceable Payment Demand"
+            for ind in indicators
+        )
+        has_extortion = any(
+            ind.name == "Extortion / Arrest Threat" for ind in indicators
+        )
 
-        if not has_otp_solicitation and not has_gift_card_or_crypto and not has_extortion:
-            if benign_applied and total_weight <= 20:
-                total_weight = max(0, total_weight - 15)
+        if (
+            not has_otp_solicitation
+            and not has_gift_card_or_crypto
+            and not has_extortion
+            and benign_applied
+            and total_weight <= 20
+        ):
+            total_weight = max(0, total_weight - 15)
 
         # Clamp raw deterministic score to 0..100
         det_score = max(0, min(100, total_weight))

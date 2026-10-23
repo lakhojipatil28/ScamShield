@@ -1,7 +1,9 @@
 """
 Health and Status Router for ScamShield.
 """
+
 from fastapi import APIRouter
+
 from backend.config import settings
 from backend.services.gemini_service import gemini_service
 

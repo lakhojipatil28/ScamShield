@@ -3,40 +3,42 @@ Reproducible Benchmark Script for ScamShield.
 Evaluates precision, recall, F1-score, and latency distributions across labeled synthetic test cases.
 Usage: python backend/benchmark.py
 """
+
 import json
 import os
+import statistics
 import sys
 import time
-import statistics
-from typing import Dict, Any, List
+from typing import Any
 
 # Ensure parent directory is in sys.path for direct script execution
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from backend.services.pipeline import pipeline
-from backend.schemas.scan_schemas import RiskLevel
 
 
-def run_benchmark(dataset_path: str = "backend/data/labeled_samples.json") -> Dict[str, Any]:
+def run_benchmark(
+    dataset_path: str = "backend/data/labeled_samples.json",
+) -> dict[str, Any]:
     if not os.path.exists(dataset_path):
         print(f"Error: Dataset not found at {dataset_path}")
         return {}
 
-    with open(dataset_path, "r", encoding="utf-8") as f:
+    with open(dataset_path, encoding="utf-8") as f:
         samples = json.load(f)
 
-    print(f"\n==================================================================")
-    print(f"  SCAMSHIELD REPRODUCIBLE BENCHMARK ENGINE")
+    print("\n==================================================================")
+    print("  SCAMSHIELD REPRODUCIBLE BENCHMARK ENGINE")
     print(f"  Evaluating {len(samples)} synthetic test cases...")
-    print(f"==================================================================\n")
+    print("==================================================================\n")
 
     true_positives = 0
     true_negatives = 0
     false_positives = 0
     false_negatives = 0
 
-    latencies_ms: List[float] = []
-    det_latencies_ms: List[float] = []
+    latencies_ms: list[float] = []
+    det_latencies_ms: list[float] = []
 
     results = []
 
@@ -77,48 +79,68 @@ def run_benchmark(dataset_path: str = "backend/data/labeled_samples.json") -> Di
             false_negatives += 1
             outcome = "FN"
 
-        results.append({
-            "id": sample_id,
-            "type": sample_type,
-            "expected": expected_level,
-            "predicted": pred_level,
-            "score": res.assessment.risk_score,
-            "latency_ms": round(elapsed_ms, 2),
-            "outcome": outcome,
-        })
+        results.append(
+            {
+                "id": sample_id,
+                "type": sample_type,
+                "expected": expected_level,
+                "predicted": pred_level,
+                "score": res.assessment.risk_score,
+                "latency_ms": round(elapsed_ms, 2),
+                "outcome": outcome,
+            }
+        )
 
-        print(f"[{outcome}] {sample_id:<12} | Type: {sample_type:<6} | Expected: {expected_level:<8} | Predicted: {pred_level:<8} ({res.assessment.risk_score:3d}) | Latency: {elapsed_ms:5.1f}ms")
+        print(
+            f"[{outcome}] {sample_id:<12} | Type: {sample_type:<6} | Expected: {expected_level:<8} | Predicted: {pred_level:<8} ({res.assessment.risk_score:3d}) | Latency: {elapsed_ms:5.1f}ms"
+        )
 
     # Metrics computation
     total = len(results)
-    precision = (true_positives / (true_positives + false_positives)) if (true_positives + false_positives) > 0 else 0.0
-    recall = (true_positives / (true_positives + false_negatives)) if (true_positives + false_negatives) > 0 else 0.0
-    f1 = (2 * precision * recall / (precision + recall)) if (precision + recall) > 0 else 0.0
+    precision = (
+        (true_positives / (true_positives + false_positives))
+        if (true_positives + false_positives) > 0
+        else 0.0
+    )
+    recall = (
+        (true_positives / (true_positives + false_negatives))
+        if (true_positives + false_negatives) > 0
+        else 0.0
+    )
+    f1 = (
+        (2 * precision * recall / (precision + recall))
+        if (precision + recall) > 0
+        else 0.0
+    )
     accuracy = ((true_positives + true_negatives) / total) if total > 0 else 0.0
 
     p50_lat = statistics.median(latencies_ms) if latencies_ms else 0.0
-    p95_lat = statistics.quantiles(latencies_ms, n=20)[18] if len(latencies_ms) >= 20 else max(latencies_ms)
+    p95_lat = (
+        statistics.quantiles(latencies_ms, n=20)[18]
+        if len(latencies_ms) >= 20
+        else max(latencies_ms)
+    )
     avg_det_ms = statistics.mean(det_latencies_ms) if det_latencies_ms else 0.0
 
-    print(f"\n==================================================================")
-    print(f"  BENCHMARK SUMMARY & PERFORMANCE AUDIT")
-    print(f"==================================================================")
+    print("\n==================================================================")
+    print("  BENCHMARK SUMMARY & PERFORMANCE AUDIT")
+    print("==================================================================")
     print(f"  Total Test Cases Evaluated : {total}")
     print(f"  True Positives (TP)        : {true_positives}")
     print(f"  True Negatives (TN)        : {true_negatives}")
     print(f"  False Positives (FP)       : {false_positives}")
     print(f"  False Negatives (FN)       : {false_negatives}")
-    print(f"  --------------------------------------------------------------")
+    print("  --------------------------------------------------------------")
     print(f"  Accuracy                   : {accuracy * 100:.2f}%")
     print(f"  Precision                  : {precision * 100:.2f}%")
     print(f"  Recall (Sensitivity)       : {recall * 100:.2f}%")
     print(f"  F1-Score                   : {f1 * 100:.2f}%")
-    print(f"  --------------------------------------------------------------")
+    print("  --------------------------------------------------------------")
     print(f"  Average E2E Latency        : {statistics.mean(latencies_ms):.2f} ms")
     print(f"  Median Latency (p50)       : {p50_lat:.2f} ms")
     print(f"  p95 Latency                : {p95_lat:.2f} ms")
     print(f"  Avg Deterministic Rule Time: {avg_det_ms:.2f} ms")
-    print(f"==================================================================\n")
+    print("==================================================================\n")
 
     summary = {
         "total": total,

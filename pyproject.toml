@@ -1,0 +1,32 @@
+[project]
+name = "scamshield"
+version = "1.0.0"
+description = "AI-Powered Multimodal Cybersecurity Defense Platform"
+authors = [{ name = "ScamShield Team" }]
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn>=0.30.0",
+    "pydantic>=2.9.0",
+    "pydantic-settings>=2.5.0",
+    "google-genai>=1.0.0",
+    "pillow>=10.4.0",
+    "python-multipart>=0.0.12",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["backend/tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM"]
+ignore = [
+    "E501",  # Line length handled softly or permitted for security strings / regexes
+    "B008",  # FastAPI Depends/File/Query/Header in default parameters
+]

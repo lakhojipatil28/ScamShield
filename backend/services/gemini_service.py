@@ -3,25 +3,24 @@ Google Gemini AI Integration Service for ScamShield.
 Uses official google-genai SDK (v2.33+) with structured outputs and prompt injection defense.
 Provides graceful fallback when API key is unconfigured or rate limited.
 """
-import os
+
 import json
 import logging
+import os
 import time
-from typing import Optional, Dict, Any, List
+from typing import Any
+
 from google import genai
 from google.genai import types
 
 from backend.config import settings
 from backend.schemas.scan_schemas import (
     GeminiScamAnalysis,
-    ThreatType,
-    RiskLevel,
-    IndicatorItem,
-    EvidenceItem,
-    EvidenceType,
-    RecommendationItem,
 )
-from backend.security.prompt_guard import wrap_untrusted_input_for_llm, detect_prompt_injection
+from backend.security.prompt_guard import (
+    detect_prompt_injection,
+    wrap_untrusted_input_for_llm,
+)
 
 logger = logging.getLogger("scamshield.gemini")
 
@@ -30,11 +29,11 @@ class GeminiService:
     def __init__(self):
         self.api_key = settings.GEMINI_API_KEY or os.environ.get("GEMINI_API_KEY")
         self.model_name = settings.GEMINI_MODEL
-        self._client: Optional[genai.Client] = None
+        self._client: genai.Client | None = None
         if self.api_key:
             try:
                 self._client = genai.Client(api_key=self.api_key)
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - Resilient fallback to deterministic detector
                 logger.warning(f"Failed to initialize Google GenAI Client: {e}")
 
     @property
@@ -46,10 +45,10 @@ class GeminiService:
         self,
         content: str,
         scan_type: str,
-        deterministic_context: Dict[str, Any],
-        image_bytes: Optional[bytes] = None,
-        mime_type: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        deterministic_context: dict[str, Any],
+        image_bytes: bytes | None = None,
+        mime_type: str | None = None,
+    ) -> dict[str, Any]:
         """
         Execute bounded AI-assisted investigation using Gemini.
         Returns validated structured analysis or graceful fallback when unavailable.
@@ -57,7 +56,7 @@ class GeminiService:
         start_time = time.perf_counter()
 
         # Step 1: Prompt Injection Guard
-        injection_detected, matched_patterns = detect_prompt_injection(content)
+        injection_detected, _matched_patterns = detect_prompt_injection(content)
 
         # Step 2: Check API key availability
         if not self.is_configured:
@@ -91,8 +90,12 @@ class GeminiService:
         # Provide deterministic findings to Gemini as contextual input
         det_summary = {
             "deterministic_score": deterministic_context.get("deterministic_score", 0),
-            "primary_threat": str(deterministic_context.get("primary_threat", "UNKNOWN")),
-            "matched_indicators_count": deterministic_context.get("rules_triggered_count", 0),
+            "primary_threat": str(
+                deterministic_context.get("primary_threat", "UNKNOWN")
+            ),
+            "matched_indicators_count": deterministic_context.get(
+                "rules_triggered_count", 0
+            ),
             "quotes": deterministic_context.get("quotes", []),
             "prompt_injection_flagged": injection_detected,
         }
@@ -106,10 +109,12 @@ class GeminiService:
 
         try:
             # Build contents
-            contents: List[Any] = []
+            contents: list[Any] = []
             if image_bytes and mime_type:
                 # Add image Part for screenshot analysis
-                image_part = types.Part.from_bytes(data=image_bytes, mime_type=mime_type)
+                image_part = types.Part.from_bytes(
+                    data=image_bytes, mime_type=mime_type
+                )
                 contents.append(image_part)
             contents.append(user_prompt)
 
@@ -133,7 +138,11 @@ class GeminiService:
             analysis = GeminiScamAnalysis.model_validate_json(raw_text)
 
             # Token usage if available
-            tokens = getattr(response.usage_metadata, "total_token_count", None) if hasattr(response, "usage_metadata") else None
+            tokens = (
+                getattr(response.usage_metadata, "total_token_count", None)
+                if hasattr(response, "usage_metadata")
+                else None
+            )
 
             return {
                 "available": True,
@@ -144,12 +153,12 @@ class GeminiService:
                 "tokens_used": tokens,
             }
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - Catch API failures for fault-tolerant fallback
             elapsed_ms = (time.perf_counter() - start_time) * 1000
             logger.error(f"Gemini API request failed: {e}")
             return {
                 "available": False,
-                "reason": f"Gemini API call failed: {str(e)}",
+                "reason": f"Gemini API call failed: {e!s}",
                 "analysis": None,
                 "injection_detected": injection_detected,
                 "latency_ms": elapsed_ms,

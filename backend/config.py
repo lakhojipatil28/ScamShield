@@ -2,9 +2,9 @@
 Configuration settings for ScamShield backend.
 Supports environment variables with sensible defaults for local development.
 """
-from typing import List, Optional
-from pydantic_settings import BaseSettings
+
 from pydantic import Field
+from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     # Server Configuration
     HOST: str = "127.0.0.1"
     PORT: int = 8000
-    CORS_ORIGINS: List[str] = [
+    CORS_ORIGINS: list[str] = [
         "http://localhost:5173",
         "http://127.0.0.1:5173",
         "http://localhost:3000",
@@ -28,7 +28,7 @@ class Settings(BaseSettings):
 
     # Google Gemini AI Configuration
     # Uses official google-genai SDK
-    GEMINI_API_KEY: Optional[str] = Field(default=None, alias="GEMINI_API_KEY")
+    GEMINI_API_KEY: str | None = Field(default=None, alias="GEMINI_API_KEY")
     GEMINI_MODEL: str = Field(default="gemini-3.8-flash", alias="GEMINI_MODEL")
     GEMINI_TIMEOUT_SECONDS: float = 12.0
     GEMINI_MAX_RETRIES: int = 2
@@ -48,8 +48,8 @@ class Settings(BaseSettings):
     # Storage and Persistence
     STORAGE_TYPE: str = "sqlite"  # "sqlite", "memory", or "firestore"
     SQLITE_DB_PATH: str = "scamshield.db"
-    FIREBASE_PROJECT_ID: Optional[str] = None
-    FIREBASE_CREDENTIALS_PATH: Optional[str] = None
+    FIREBASE_PROJECT_ID: str | None = None
+    FIREBASE_CREDENTIALS_PATH: str | None = None
 
     # Request limits
     MAX_TEXT_LENGTH: int = 25000

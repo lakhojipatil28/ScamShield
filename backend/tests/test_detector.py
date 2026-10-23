@@ -1,14 +1,17 @@
 """Unit tests for Deterministic Threat Detector."""
-import pytest
-from backend.services.detector import detector
+
 from backend.schemas.scan_schemas import ThreatType
+from backend.services.detector import detector
 
 
 def test_detect_otp_solicitation():
     text = "Please text back your 6-digit verification code immediately to keep your account open."
     result = detector.analyze_text(text)
     assert result["deterministic_score"] >= 40
-    assert any(ind.name == "OTP / Verification Code Solicitation" for ind in result["indicators"])
+    assert any(
+        ind.name == "OTP / Verification Code Solicitation"
+        for ind in result["indicators"]
+    )
     assert result["primary_threat"] == ThreatType.CREDENTIAL_HARVESTING
 
 
@@ -16,9 +19,18 @@ def test_detect_fake_job_offer():
     text = "Work from home and earn $850 per day! Please pay a registration fee of $150 via Apple gift card."
     result = detector.analyze_text(text)
     assert result["deterministic_score"] >= 60
-    assert any(ind.name == "Upfront Job Fee / Fake Employment Trap" for ind in result["indicators"])
-    assert any(ind.name == "Irreversible / Untraceable Payment Demand" for ind in result["indicators"])
-    assert result["primary_threat"] in [ThreatType.ADVANCE_FEE_FRAUD, ThreatType.PHISHING]
+    assert any(
+        ind.name == "Upfront Job Fee / Fake Employment Trap"
+        for ind in result["indicators"]
+    )
+    assert any(
+        ind.name == "Irreversible / Untraceable Payment Demand"
+        for ind in result["indicators"]
+    )
+    assert result["primary_threat"] in [
+        ThreatType.ADVANCE_FEE_FRAUD,
+        ThreatType.PHISHING,
+    ]
 
 
 def test_detect_extortion_and_arrest_threat():

@@ -1,8 +1,8 @@
 """Unit tests for URL Risk Analyzer & SSRF Guard."""
-import pytest
-from backend.services.url_analyzer import url_analyzer
-from backend.security.ssrf_guard import is_private_or_restricted_ip, is_ip_host
+
 from backend.schemas.scan_schemas import ThreatType
+from backend.security.ssrf_guard import is_private_or_restricted_ip
+from backend.services.url_analyzer import url_analyzer
 
 
 def test_ssrf_private_and_metadata_ip():

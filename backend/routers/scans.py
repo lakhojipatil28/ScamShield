@@ -2,15 +2,14 @@
 Scan API Endpoints for ScamShield.
 Handles text, email, URL, and screenshot threat analyses.
 """
-from typing import Optional, List
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Query, Header
-from pydantic import ValidationError
+
+from fastapi import APIRouter, File, Header, HTTPException, Query, UploadFile
 
 from backend.schemas.scan_schemas import (
-    TextScanRequest,
     EmailScanRequest,
-    UrlScanRequest,
     ScanResponse,
+    TextScanRequest,
+    UrlScanRequest,
 )
 from backend.services.pipeline import pipeline
 from backend.services.screenshot_service import screenshot_service
@@ -19,7 +18,7 @@ from backend.services.storage import storage
 router = APIRouter(prefix="/api/v1", tags=["Scans"])
 
 
-def get_user_id(authorization: Optional[str] = Header(None)) -> str:
+def get_user_id(authorization: str | None = Header(None)) -> str:
     """Extract optional user identifier from Bearer token or default to guest."""
     if authorization and authorization.startswith("Bearer "):
         token = authorization[7:].strip()
@@ -30,7 +29,7 @@ def get_user_id(authorization: Optional[str] = Header(None)) -> str:
 
 
 @router.post("/scan/text", response_model=ScanResponse)
-async def scan_text(request: TextScanRequest, authorization: Optional[str] = Header(None)):
+async def scan_text(request: TextScanRequest, authorization: str | None = Header(None)):
     """Analyze a suspicious plain text message, SMS, or conversation snippet."""
     user_id = get_user_id(authorization)
     try:
@@ -40,11 +39,13 @@ async def scan_text(request: TextScanRequest, authorization: Optional[str] = Hea
             user_id=user_id,
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Text analysis error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Text analysis error: {e!s}") from e
 
 
 @router.post("/scan/email", response_model=ScanResponse)
-async def scan_email(request: EmailScanRequest, authorization: Optional[str] = Header(None)):
+async def scan_email(
+    request: EmailScanRequest, authorization: str | None = Header(None)
+):
     """Analyze a suspicious email, job offer, or invoice notice."""
     user_id = get_user_id(authorization)
     try:
@@ -56,11 +57,11 @@ async def scan_email(request: EmailScanRequest, authorization: Optional[str] = H
             user_id=user_id,
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Email analysis error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Email analysis error: {e!s}") from e
 
 
 @router.post("/scan/url", response_model=ScanResponse)
-async def scan_url(request: UrlScanRequest, authorization: Optional[str] = Header(None)):
+async def scan_url(request: UrlScanRequest, authorization: str | None = Header(None)):
     """Safely inspect a URL for lookalike spoofing, SSRF targets, and malicious redirect structures."""
     user_id = get_user_id(authorization)
     try:
@@ -69,13 +70,13 @@ async def scan_url(request: UrlScanRequest, authorization: Optional[str] = Heade
             user_id=user_id,
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"URL analysis error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"URL analysis error: {e!s}") from e
 
 
 @router.post("/scan/screenshot", response_model=ScanResponse)
 async def scan_screenshot(
     file: UploadFile = File(...),
-    authorization: Optional[str] = Header(None),
+    authorization: str | None = Header(None),
 ):
     """
     Upload and analyze a screenshot of a suspicious message or advertisement.
@@ -87,10 +88,14 @@ async def scan_screenshot(
     try:
         file_bytes = await file.read()
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Failed to read uploaded file: {str(e)}")
+        raise HTTPException(
+            status_code=400, detail=f"Failed to read uploaded file: {e!s}"
+        ) from e
 
     # Validate image file integrity
-    is_valid, msg, detected_mime = screenshot_service.validate_image(file_bytes, file.content_type)
+    is_valid, msg, detected_mime = screenshot_service.validate_image(
+        file_bytes, file.content_type
+    )
     if not is_valid:
         raise HTTPException(status_code=400, detail=msg)
 
@@ -101,16 +106,16 @@ async def scan_screenshot(
             user_id=user_id,
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Screenshot analysis error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Screenshot analysis error: {e!s}") from e
 
 
-@router.get("/scans", response_model=List[ScanResponse])
+@router.get("/scans", response_model=list[ScanResponse])
 async def list_scans(
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0),
-    risk_level: Optional[str] = None,
-    scan_type: Optional[str] = None,
-    authorization: Optional[str] = Header(None),
+    risk_level: str | None = None,
+    scan_type: str | None = None,
+    authorization: str | None = Header(None),
 ):
     """Retrieve saved scan records with user-level partition and filters."""
     user_id = get_user_id(authorization)
@@ -125,7 +130,7 @@ async def list_scans(
 
 
 @router.get("/scans/{scan_id}", response_model=ScanResponse)
-async def get_scan_report(scan_id: str, authorization: Optional[str] = Header(None)):
+async def get_scan_report(scan_id: str, authorization: str | None = Header(None)):
     """Retrieve full scan report by ID."""
     user_id = get_user_id(authorization)
     scan = storage.get_scan_by_id(scan_id, user_id=user_id)
@@ -135,7 +140,7 @@ async def get_scan_report(scan_id: str, authorization: Optional[str] = Header(No
 
 
 @router.delete("/scans/{scan_id}")
-async def delete_scan(scan_id: str, authorization: Optional[str] = Header(None)):
+async def delete_scan(scan_id: str, authorization: str | None = Header(None)):
     """Delete a scan record permanently from user history."""
     user_id = get_user_id(authorization)
     success = storage.delete_scan(scan_id, user_id=user_id)

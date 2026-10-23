@@ -1,13 +1,12 @@
 """
 Prompt Injection Defense and Content Sanitization Guard for ScamShield.
 Defends against prompt injection, jailbreaks, instruction overrides, and redacts sensitive credentials.
+Utilizes pre-compiled regex objects for high-throughput evaluation.
 """
 import re
-from typing import Tuple, List, Dict, Any
-
 
 # Regular expressions for common prompt injection and instruction hijack patterns
-INJECTION_PATTERNS = [
+INJECTION_PATTERN_STRINGS = [
     r"(?i)ignore\s+(all\s+)?(previous|prior|above)\s+(instructions|directives|rules|prompts)",
     r"(?i)disregard\s+(all\s+)?(previous|prior|system)\s+(instructions|rules)",
     r"(?i)you\s+are\s+now\s+(in\s+)?(developer|dan|jailbreak|unrestricted|god)\s+mode",
@@ -22,27 +21,33 @@ INJECTION_PATTERNS = [
     r"(?i)\[\s*system\s*\]",
 ]
 
+COMPILED_INJECTION_PATTERNS = [re.compile(p) for p in INJECTION_PATTERN_STRINGS]
+
 # Sensitive information patterns for data minimization and privacy protection
-SENSITIVE_PATTERNS = [
+SENSITIVE_PATTERN_STRINGS = [
     # Credit Card Numbers (13-19 digits, with spaces or dashes)
-    (r"\b(?:\d{4}[ -]?){3}\d{4}\b", "[REDACTED_CARD_NUMBER]"),
+    (re.compile(r"\b(?:\d{4}[ -]?){3}\d{4}\b"), "[REDACTED_CARD_NUMBER]"),
     # CVV / CVC (3-4 digits preceded by cvv/cvc)
-    (r"(?i)\b(?:cvv|cvc|cvv2|security code)[\s:=]+(\d{3,4})\b", "[REDACTED_CVV]"),
+    (re.compile(r"(?i)\b(?:cvv|cvc|cvv2|security code)[\s:=]+(\d{3,4})\b"), "[REDACTED_CVV]"),
     # One-Time Passwords / Verification codes (4-8 digits near otp/code/pin)
-    (r"(?i)\b(?:otp|one-time code|verification code|security code|pin)(?:\s+code)?[\s:=]+(?:is\s+)?(\d{4,8})\b", "[REDACTED_OTP]"),
+    (re.compile(r"(?i)\b(?:otp|one-time code|verification code|security code|pin)(?:\s+code)?[\s:=]+(?:is\s+)?(\d{4,8})\b"), "[REDACTED_OTP]"),
     # Passwords (e.g. password: xyz)
-    (r"(?i)\b(?:password|passwd|pwd)[\s:=]+(\S+)", "password: [REDACTED_PASSWORD]"),
+    (re.compile(r"(?i)\b(?:password|passwd|pwd)[\s:=]+(\S+)"), "password: [REDACTED_PASSWORD]"),
 ]
 
+STRIP_TAG_REGEX = re.compile(
+    r"(?i)<\s*/?\s*(?:UNTRUSTED_CONTENT|SYSTEM_INSTRUCTION|SYSTEM_OVERRIDE|system)[^>]*>"
+)
 
-def detect_prompt_injection(content: str) -> Tuple[bool, List[str]]:
+
+def detect_prompt_injection(content: str) -> tuple[bool, list[str]]:
     """
     Detect if user input contains recognizable prompt injection directives.
     Returns (is_injection_detected, list_of_matched_patterns).
     """
-    detected_patterns = []
-    for pattern in INJECTION_PATTERNS:
-        match = re.search(pattern, content)
+    detected_patterns: list[str] = []
+    for compiled in COMPILED_INJECTION_PATTERNS:
+        match = compiled.search(content)
         if match:
             detected_patterns.append(match.group(0))
 
@@ -55,8 +60,8 @@ def sanitize_and_redact_content(content: str) -> str:
     Prevents storage and propagation of high-risk user credentials.
     """
     sanitized = content
-    for pattern, replacement in SENSITIVE_PATTERNS:
-        sanitized = re.sub(pattern, replacement, sanitized)
+    for compiled, replacement in SENSITIVE_PATTERN_STRINGS:
+        sanitized = compiled.sub(replacement, sanitized)
     return sanitized
 
 
@@ -67,13 +72,9 @@ def wrap_untrusted_input_for_llm(untrusted_content: str, context_label: str = "U
     never executable directives.
     """
     sanitized = sanitize_and_redact_content(untrusted_content)
-    
-    # Strip dangerous XML/boundary tokens from within the user content to avoid escaping the container
-    safe_body = re.sub(
-        r"(?i)<\s*/?\s*(?:UNTRUSTED_CONTENT|SYSTEM_INSTRUCTION|SYSTEM_OVERRIDE|system)[^>]*>",
-        "[STRIPPED_TAG]",
-        sanitized,
-    )
+
+    # Strip dangerous XML/boundary tokens from within user content
+    safe_body = STRIP_TAG_REGEX.sub("[STRIPPED_TAG]", sanitized)
 
     wrapped = (
         f"<{context_label}>\n"

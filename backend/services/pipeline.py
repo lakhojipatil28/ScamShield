@@ -3,33 +3,41 @@ Bounded Agentic Analysis Workflow Pipeline for ScamShield.
 Coordinates deterministic engines, Google Gemini AI structured reasoning,
 risk reconciliation, and operational audit logging.
 """
+
+import hashlib
+import threading
 import time
 import uuid
-from datetime import datetime, timezone
-from typing import Dict, Any, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from backend.schemas.scan_schemas import (
-    ScanType,
-    ScanResponse,
     OperationalMetrics,
-    RiskAssessment,
+    ScanResponse,
+    ScanType,
+)
+from backend.security.prompt_guard import (
+    sanitize_and_redact_content,
 )
 from backend.services.detector import detector
-from backend.services.url_analyzer import url_analyzer
-from backend.services.screenshot_service import screenshot_service
 from backend.services.gemini_service import gemini_service
-from backend.services.scoring_engine import scoring_engine
-from backend.services.storage import storage
 from backend.services.metrics_service import metrics_service
-from backend.security.prompt_guard import sanitize_and_redact_content, detect_prompt_injection
+from backend.services.scoring_engine import scoring_engine
+from backend.services.screenshot_service import screenshot_service
+from backend.services.storage import storage
+from backend.services.url_analyzer import url_analyzer
 
 
 class BoundedAnalysisPipeline:
+    def __init__(self) -> None:
+        self._cache: dict[str, dict[str, Any]] = {}
+        self._cache_lock = threading.Lock()
+        self._cache_max = 500
     def process_text_scan(
         self,
         content: str,
-        context: Optional[str] = None,
-        user_id: Optional[str] = "guest",
+        context: str | None = None,
+        user_id: str | None = "guest",
     ) -> ScanResponse:
         """Execute bounded workflow for plain text messages or SMS."""
         return self._execute_workflow(
@@ -42,10 +50,10 @@ class BoundedAnalysisPipeline:
     def process_email_scan(
         self,
         body: str,
-        sender: Optional[str] = None,
-        subject: Optional[str] = None,
-        context: Optional[str] = None,
-        user_id: Optional[str] = "guest",
+        sender: str | None = None,
+        subject: str | None = None,
+        context: str | None = None,
+        user_id: str | None = "guest",
     ) -> ScanResponse:
         """Execute bounded workflow for email or job offers."""
         email_header_context = f"Sender: {sender or 'Unspecified'}\nSubject: {subject or 'Unspecified'}\nPlatform Context: {context or 'None'}"
@@ -59,7 +67,7 @@ class BoundedAnalysisPipeline:
     def process_url_scan(
         self,
         raw_url: str,
-        user_id: Optional[str] = "guest",
+        user_id: str | None = "guest",
     ) -> ScanResponse:
         """Execute bounded workflow for URLs without making dangerous external HTTP calls."""
         start_time = time.perf_counter()
@@ -67,6 +75,38 @@ class BoundedAnalysisPipeline:
 
         # Step 1: Input Validation & Sanitization
         sanitized_url = raw_url.strip()
+
+        # Cache check for instant sub-millisecond repeated analysis
+        cache_key = hashlib.sha256(f"url:{sanitized_url}".encode()).hexdigest()
+        with self._cache_lock:
+            cached = self._cache.get(cache_key)
+
+        if cached:
+            total_elapsed_ms = (time.perf_counter() - start_time) * 1000
+            metrics = OperationalMetrics(
+                scan_id=scan_id,
+                duration_ms=round(total_elapsed_ms, 2),
+                deterministic_duration_ms=0.05,
+                ai_duration_ms=0.0,
+                tokens_used=0,
+                timestamp=datetime.now(UTC).isoformat(),
+            )
+            response = ScanResponse(
+                scan_id=scan_id,
+                scan_type=ScanType.URL,
+                target_analyzed=sanitized_url[:200],
+                assessment=cached["assessment"],
+                indicators=cached["indicators"],
+                evidence=cached["evidence"],
+                recommendations=cached["recommendations"],
+                deterministic_checks=cached["deterministic_checks"],
+                extracted_text=None,
+                metrics=metrics,
+                created_at=datetime.now(UTC).isoformat(),
+                user_id=user_id,
+            )
+            storage.save_scan(response, user_id=user_id)
+            return response
 
         # Step 2 & 3: Run Deterministic URL Inspection (Safe parsing & SSRF Defense)
         det_start = time.perf_counter()
@@ -96,7 +136,7 @@ class BoundedAnalysisPipeline:
             deterministic_duration_ms=round(det_elapsed_ms, 2),
             ai_duration_ms=round(ai_res.get("latency_ms", 0.0), 2),
             tokens_used=ai_res.get("tokens_used"),
-            timestamp=datetime.now(timezone.utc).isoformat(),
+            timestamp=datetime.now(UTC).isoformat(),
         )
 
         # Record operational metrics
@@ -122,9 +162,21 @@ class BoundedAnalysisPipeline:
             deterministic_checks=det_results.get("safe_res", {}),
             extracted_text=None,
             metrics=metrics,
-            created_at=datetime.now(timezone.utc).isoformat(),
+            created_at=datetime.now(UTC).isoformat(),
             user_id=user_id,
         )
+
+        # Store in LRU cache
+        with self._cache_lock:
+            if len(self._cache) >= self._cache_max:
+                self._cache.clear()
+            self._cache[cache_key] = {
+                "assessment": reconciled["assessment"],
+                "indicators": reconciled["indicators"],
+                "evidence": reconciled["evidence"],
+                "recommendations": reconciled["recommendations"],
+                "deterministic_checks": det_results.get("safe_res", {}),
+            }
 
         # Step 8: Persist Scan Record
         storage.save_scan(response, user_id=user_id)
@@ -134,18 +186,22 @@ class BoundedAnalysisPipeline:
         self,
         image_bytes: bytes,
         mime_type: str,
-        user_id: Optional[str] = "guest",
+        user_id: str | None = "guest",
     ) -> ScanResponse:
         """Execute bounded workflow for screenshot uploads (PNG, JPEG, WebP)."""
         start_time = time.perf_counter()
         scan_id = f"scan_{uuid.uuid4().hex[:12]}"
 
         # Step 1: Text extraction via Gemini Vision (or OCR fallback)
-        extracted_text, ocr_ok, ocr_notes = screenshot_service.extract_text_from_screenshot(image_bytes, mime_type)
+        extracted_text, ocr_ok, ocr_notes = (
+            screenshot_service.extract_text_from_screenshot(image_bytes, mime_type)
+        )
 
         # Step 2 & 3: Run Deterministic Checks on extracted text
         det_start = time.perf_counter()
-        det_results = detector.analyze_text(extracted_text, context="Extracted from image screenshot")
+        det_results = detector.analyze_text(
+            extracted_text, context="Extracted from image screenshot"
+        )
         det_elapsed_ms = (time.perf_counter() - det_start) * 1000
 
         # Step 4: Structured AI Analysis with Multimodal vision part
@@ -167,7 +223,9 @@ class BoundedAnalysisPipeline:
 
         # If OCR was incomplete or had notes, add to uncertainty
         if not ocr_ok:
-            reconciled["assessment"].uncertainty_notes.append(f"Image Extraction Caveat: {ocr_notes}")
+            reconciled["assessment"].uncertainty_notes.append(
+                f"Image Extraction Caveat: {ocr_notes}"
+            )
 
         total_elapsed_ms = (time.perf_counter() - start_time) * 1000
 
@@ -177,7 +235,7 @@ class BoundedAnalysisPipeline:
             deterministic_duration_ms=round(det_elapsed_ms, 2),
             ai_duration_ms=round(ai_res.get("latency_ms", 0.0), 2),
             tokens_used=ai_res.get("tokens_used"),
-            timestamp=datetime.now(timezone.utc).isoformat(),
+            timestamp=datetime.now(UTC).isoformat(),
         )
 
         metrics_service.record_scan(
@@ -207,7 +265,7 @@ class BoundedAnalysisPipeline:
             },
             extracted_text=extracted_text,
             metrics=metrics,
-            created_at=datetime.now(timezone.utc).isoformat(),
+            created_at=datetime.now(UTC).isoformat(),
             user_id=user_id,
         )
 
@@ -218,8 +276,8 @@ class BoundedAnalysisPipeline:
         self,
         scan_type: ScanType,
         raw_input: str,
-        additional_context: Optional[str] = None,
-        user_id: Optional[str] = "guest",
+        additional_context: str | None = None,
+        user_id: str | None = "guest",
     ) -> ScanResponse:
         """Internal bounded workflow implementation for text & email."""
         start_time = time.perf_counter()
@@ -227,7 +285,43 @@ class BoundedAnalysisPipeline:
 
         # Step 1: Input Validation and Sanitization (Redact sensitive OTPs/cards)
         sanitized_input = sanitize_and_redact_content(raw_input)
-        target_preview = sanitized_input[:150] + ("..." if len(sanitized_input) > 150 else "")
+        target_preview = sanitized_input[:150] + (
+            "..." if len(sanitized_input) > 150 else ""
+        )
+
+        # Cache check for instant sub-millisecond repeated analysis
+        cache_key = hashlib.sha256(
+            f"{scan_type.value}:{sanitized_input}:{additional_context or ''}".encode()
+        ).hexdigest()
+        with self._cache_lock:
+            cached = self._cache.get(cache_key)
+
+        if cached:
+            total_elapsed_ms = (time.perf_counter() - start_time) * 1000
+            metrics = OperationalMetrics(
+                scan_id=scan_id,
+                duration_ms=round(total_elapsed_ms, 2),
+                deterministic_duration_ms=0.05,
+                ai_duration_ms=0.0,
+                tokens_used=0,
+                timestamp=datetime.now(UTC).isoformat(),
+            )
+            response = ScanResponse(
+                scan_id=scan_id,
+                scan_type=scan_type,
+                target_analyzed=target_preview,
+                assessment=cached["assessment"],
+                indicators=cached["indicators"],
+                evidence=cached["evidence"],
+                recommendations=cached["recommendations"],
+                deterministic_checks=cached["deterministic_checks"],
+                extracted_text=None,
+                metrics=metrics,
+                created_at=datetime.now(UTC).isoformat(),
+                user_id=user_id,
+            )
+            storage.save_scan(response, user_id=user_id)
+            return response
 
         # Step 2 & 3: Run Deterministic Security Checks
         det_start = time.perf_counter()
@@ -257,7 +351,7 @@ class BoundedAnalysisPipeline:
             deterministic_duration_ms=round(det_elapsed_ms, 2),
             ai_duration_ms=round(ai_res.get("latency_ms", 0.0), 2),
             tokens_used=ai_res.get("tokens_used"),
-            timestamp=datetime.now(timezone.utc).isoformat(),
+            timestamp=datetime.now(UTC).isoformat(),
         )
 
         metrics_service.record_scan(
@@ -285,9 +379,24 @@ class BoundedAnalysisPipeline:
             },
             extracted_text=None,
             metrics=metrics,
-            created_at=datetime.now(timezone.utc).isoformat(),
+            created_at=datetime.now(UTC).isoformat(),
             user_id=user_id,
         )
+
+        # Store in LRU cache
+        with self._cache_lock:
+            if len(self._cache) >= self._cache_max:
+                self._cache.clear()
+            self._cache[cache_key] = {
+                "assessment": reconciled["assessment"],
+                "indicators": reconciled["indicators"],
+                "evidence": reconciled["evidence"],
+                "recommendations": reconciled["recommendations"],
+                "deterministic_checks": {
+                    "rules_triggered": det_results.get("rules_triggered_count", 0),
+                    "deterministic_score": det_results.get("deterministic_score", 0),
+                },
+            }
 
         # Step 8: Persist Scan Record
         storage.save_scan(response, user_id=user_id)

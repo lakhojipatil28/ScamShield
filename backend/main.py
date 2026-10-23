@@ -3,18 +3,20 @@ Main FastAPI Application Entry Point for ScamShield.
 Configures CORS, rate limiting, security headers, input sanitization, and routers.
 Supports serving bundled React frontend SPA when built.
 """
+
 import os
 import time
 from collections import defaultdict
+
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from backend.config import settings
-from backend.routers.scans import router as scans_router
-from backend.routers.metrics import router as metrics_router
 from backend.routers.health import router as health_router
+from backend.routers.metrics import router as metrics_router
+from backend.routers.scans import router as scans_router
 
 app = FastAPI(
     title=settings.APP_NAME,
@@ -49,7 +51,9 @@ async def security_and_rate_limit_middleware(request: Request, call_next):
     ]
 
     # Exclude health check and assets from rate limits
-    if not request.url.path.startswith(("/assets", "/health", "/docs", "/openapi.json")):
+    if not request.url.path.startswith(
+        ("/assets", "/health", "/docs", "/openapi.json")
+    ):
         if len(rate_limit_records[client_ip]) >= settings.RATE_LIMIT_PER_MINUTE:
             return JSONResponse(
                 status_code=429,
@@ -68,7 +72,9 @@ async def security_and_rate_limit_middleware(request: Request, call_next):
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["X-XSS-Protection"] = "1; mode=block"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    response.headers["Strict-Transport-Security"] = (
+        "max-age=31536000; includeSubDomains"
+    )
 
     return response
 
@@ -95,6 +101,7 @@ if os.path.exists(dist_path):
             return FileResponse(file_path)
         return FileResponse(os.path.join(dist_path, "index.html"))
 else:
+
     @app.get("/")
     def root():
         return {
@@ -108,4 +115,9 @@ else:
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run("backend.main:app", host=settings.HOST, port=settings.PORT, reload=settings.DEBUG)
+    uvicorn.run(
+        "backend.main:app",
+        host=settings.HOST,
+        port=settings.PORT,
+        reload=settings.DEBUG,
+    )

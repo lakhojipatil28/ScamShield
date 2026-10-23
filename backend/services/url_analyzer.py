@@ -3,24 +3,26 @@ Safe URL Risk Analyzer Service for ScamShield.
 Conducts safe structural, homograph, protocol, and reputation analysis on web links.
 Guaranteed safe: never issues server-side GET requests or clicks links.
 """
-from typing import Dict, Any, List
-from backend.security.ssrf_guard import analyze_safe_url
+
+from typing import Any
+
 from backend.schemas.scan_schemas import (
-    IndicatorItem,
     EvidenceItem,
     EvidenceType,
+    IndicatorItem,
     ThreatType,
 )
+from backend.security.ssrf_guard import analyze_safe_url
 
 
 class UrlAnalyzerService:
-    def analyze(self, raw_url: str) -> Dict[str, Any]:
+    def analyze(self, raw_url: str) -> dict[str, Any]:
         """
         Analyze a URL safely and return structured security findings.
         """
         safe_res = analyze_safe_url(raw_url)
-        indicators: List[IndicatorItem] = []
-        evidence: List[EvidenceItem] = []
+        indicators: list[IndicatorItem] = []
+        evidence: list[EvidenceItem] = []
 
         # 1. SSRF & Private IP Defense
         if safe_res["is_private_ssrf"]:

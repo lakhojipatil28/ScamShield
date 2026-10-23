@@ -1,31 +1,31 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, lazy, Suspense } from 'react';
 import { Navbar } from './components/Navbar';
 import { LandingHero } from './components/LandingHero';
 import { ScanWorkspace } from './components/ScanWorkspace';
 import { ScanResultView } from './components/ScanResultView';
-import { Dashboard } from './components/Dashboard';
-import { ScanHistory } from './components/ScanHistory';
-import { MethodologyModal } from './components/MethodologyModal';
-import type { HealthStatus, ScanResponse, ScanType } from './types';
+import type { ScanResponse, HealthStatus, ScanType } from './types';
 import { checkHealth } from './services/api';
-import { Shield, Lock, Cpu, Sparkles } from 'lucide-react';
+import { Shield, Sparkles } from 'lucide-react';
+
+// Code-split heavy views for optimal performance & loading efficiency
+const Dashboard = lazy(() => import('./components/Dashboard').then((m) => ({ default: m.Dashboard })));
+const ScanHistory = lazy(() => import('./components/ScanHistory').then((m) => ({ default: m.ScanHistory })));
+const MethodologyModal = lazy(() => import('./components/MethodologyModal').then((m) => ({ default: m.MethodologyModal })));
 
 export function App() {
   const [activeTab, setActiveTab] = useState<'workspace' | 'dashboard' | 'history' | 'methodology'>('workspace');
   const [currentResult, setCurrentResult] = useState<ScanResponse | null>(null);
-  const [selectedScanType, setSelectedScanType] = useState<ScanType>('text');
+  const [scanTypePreference, setScanTypePreference] = useState<ScanType>('text');
   const [health, setHealth] = useState<HealthStatus | null>(null);
 
   useEffect(() => {
     checkHealth()
-      .then((data) => setHealth(data))
-      .catch((err) => console.warn('Health check unreachable:', err));
+      .then(setHealth)
+      .catch((err) => console.warn('Backend offline or health check failed:', err));
   }, []);
 
-  const handleStartScanFromHero = (type?: ScanType) => {
-    if (type) {
-      setSelectedScanType(type);
-    }
+  const handleStartScan = (type?: ScanType) => {
+    if (type) setScanTypePreference(type);
     setCurrentResult(null);
     setActiveTab('workspace');
   };
@@ -34,110 +34,90 @@ export function App() {
     setCurrentResult(result);
   };
 
-  const handleSelectHistoryScan = (scan: ScanResponse) => {
+  const handleSelectFromHistory = (scan: ScanResponse) => {
     setCurrentResult(scan);
     setActiveTab('workspace');
   };
 
-  const handleNewScan = () => {
-    setCurrentResult(null);
-  };
-
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-cyan-500/20 selection:text-cyan-300">
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-between selection:bg-cyan-500/20 selection:text-cyan-300">
       {/* Top Navigation */}
       <Navbar
         activeTab={activeTab}
         setActiveTab={(tab) => {
           setActiveTab(tab);
-          if (tab !== 'workspace') {
-            setCurrentResult(null);
-          }
+          if (tab !== 'workspace') setCurrentResult(null);
         }}
         health={health}
       />
 
       {/* Main Content Area */}
-      <main className="flex-1">
+      <main id="main-content" tabIndex={-1} className="flex-1 pb-16 outline-none">
         {activeTab === 'workspace' && (
           <>
-            {!currentResult && (
-              <>
-                <LandingHero onStartScan={handleStartScanFromHero} />
-                <div className="py-8">
-                  <ScanWorkspace
-                    key={selectedScanType}
-                    initialScanType={selectedScanType}
-                    onScanComplete={handleScanComplete}
-                  />
-                </div>
-              </>
-            )}
-
-            {currentResult && (
+            {!currentResult && <LandingHero onStartScan={handleStartScan} />}
+            {currentResult ? (
               <ScanResultView
                 result={currentResult}
-                onNewScan={handleNewScan}
+                onNewScan={() => setCurrentResult(null)}
+              />
+            ) : (
+              <ScanWorkspace
+                initialScanType={scanTypePreference}
+                onScanComplete={handleScanComplete}
               />
             )}
           </>
         )}
 
-        {activeTab === 'dashboard' && (
-          <Dashboard
-            onSelectScan={handleSelectHistoryScan}
-            onGoToScanner={() => {
-              setCurrentResult(null);
-              setActiveTab('workspace');
-            }}
-          />
-        )}
+        <Suspense
+          fallback={
+            <div className="flex items-center justify-center p-20 text-slate-400 gap-2">
+              <Sparkles className="h-5 w-5 text-cyan-400 animate-spin" />
+              <span className="text-sm">Loading security module...</span>
+            </div>
+          }
+        >
+          {activeTab === 'dashboard' && (
+            <Dashboard
+              onSelectScan={handleSelectFromHistory}
+              onGoToScanner={() => {
+                setCurrentResult(null);
+                setActiveTab('workspace');
+              }}
+            />
+          )}
 
-        {activeTab === 'history' && (
-          <ScanHistory
-            onSelectScan={handleSelectHistoryScan}
-            onGoToScanner={() => {
-              setCurrentResult(null);
-              setActiveTab('workspace');
-            }}
-          />
-        )}
+          {activeTab === 'history' && (
+            <ScanHistory
+              onSelectScan={handleSelectFromHistory}
+              onGoToScanner={() => {
+                setCurrentResult(null);
+                setActiveTab('workspace');
+              }}
+            />
+          )}
 
-        {activeTab === 'methodology' && <MethodologyModal />}
+          {activeTab === 'methodology' && <MethodologyModal />}
+        </Suspense>
       </main>
 
       {/* Footer */}
-      <footer className="border-t border-slate-900 bg-slate-950/80 py-8 px-4 sm:px-6 lg:px-8 text-xs text-slate-400">
+      <footer className="border-t border-slate-900 bg-slate-950 py-8 px-4 sm:px-6 lg:px-8 text-xs text-slate-500">
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2">
-            <div className="h-6 w-6 rounded-md bg-gradient-to-tr from-cyan-600 to-indigo-600 flex items-center justify-center">
-              <Shield className="h-3.5 w-3.5 text-white" />
-            </div>
-            <span className="font-semibold text-slate-200">ScamShield</span>
-            <span className="text-slate-600">|</span>
-            <span>PromptWar Hackathon 2026</span>
+            <Shield className="h-4 w-4 text-cyan-500" />
+            <span className="font-semibold text-slate-300">ScamShield</span>
+            <span>• Engineered for PromptWar Hackathon</span>
           </div>
-
-          <div className="flex flex-wrap items-center justify-center gap-4 text-slate-400">
-            <span className="flex items-center gap-1">
-              <Sparkles className="h-3 w-3 text-cyan-400" />
-              Powered by Google Gemini AI
-            </span>
-            <span>•</span>
-            <span className="flex items-center gap-1">
-              <Lock className="h-3 w-3 text-emerald-400" />
-              Zero Sensitive Data Retention
-            </span>
-            <span>•</span>
-            <span className="flex items-center gap-1">
-              <Cpu className="h-3 w-3 text-indigo-400" />
-              SSRF & Anti-Injection Guardrails
-            </span>
+          <div className="text-center sm:text-right space-y-1">
+            <p>
+              Theme: <span className="text-slate-400">Build Beyond AI: Engineer Secure, Intelligent & Autonomous Applications</span>
+            </p>
+            <p className="text-[11px] text-slate-600">
+              ScamShield provides informational security analysis and risk estimation; not a guarantee of absolute safety.
+            </p>
           </div>
-
-          <p className="text-slate-400 text-center sm:text-right">
-            Pre-emptive AI Cybersecurity Engine
-          </p>
         </div>
       </footer>
     </div>
